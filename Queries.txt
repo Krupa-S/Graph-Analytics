@@ -1,0 +1,198 @@
+Noe4j Queries
+======================================================================== 
+//load answers file
+LOAD CSV WITH HEADERS FROM 'file:///Questions.csv' AS line
+CREATE (:Questions { questionID: line.Id, qUserId: line.OwnerUserId,qCreationDate:line.CreationDate,qClosedDate:line.ClosedDate,qScore: line.Score, questTitle: line.Title,qBody:line.Body })
+
+
+//load answers file
+LOAD CSV WITH HEADERS FROM 'file:///Answers.csv' AS line
+CREATE (:Answers { answerId: line.Id, answerUserId: line.OwnerUserId, CreationDate: line.CreationDate, ParentQuestionId: line.ParentId, AnswerScore: line.Score, AnswerBody: line.Body })
+
+//Load tags csv
+LOAD CSV WITH HEADERS FROM 'file:///TagsNew.csv' AS line
+CREATE (:Tags { tagID:line.tagID, tagName: line.tagName})
+
+
+//Relation between question and tags
+LOAD CSV WITH HEADERS FROM 'file:///TagsQuestionsRelation.csv' AS edges
+MATCH (a:Question{questionID: edges.QuestionID})
+MATCH (b:Tags{tagID: edges.tagID})
+CREATE (a)-[:HAS_TAG]->(b);
+
+===========================================================================================
+Usecases: 
+===========================================================================================
+1. Top 5 tags of all time 
+
+MATCH (t:Tags)<-[r:HAS_TAG]-(q:Questions)
+WITH t 
+RETURN t.tagName,count(*) AS count
+ORDER BY count DESC LIMIT 5;
+=========================================================================
+2. The Top Answerers for the javascript Tag 
+
+MATCH (:Tags {tagName:'javascript'})<-[:HAS_TAG]-()-[:HAS_ANSWER]->(a:Answers)
+RETURN a.answerUserId,count(*) as count, collect(a.ParentQuestionId) AS QuestionIDs
+ORDER BY count DESC LIMIT 10;
+	
+=========================================================================
+3. All Answers to each Java Questions According to Question Score
+
+MATCH (:Tags {tagName:'java'})<-[:HAS_TAG]-(q:Questions)-[:HAS_ANSWER]->(a:Answers)
+RETURN q.questionID AS QID ,q.questTitle AS QTitle,q.qScore AS qScore,count(*) AS TotalAnwers, collect(a.AnswerBody) AS Answers
+ORDER BY q.qScore DESC;
+
+=============================================================================
+4. Where Else Were the Top Answerers of Java  Also Active?
+
+MATCH (c:Tags {tagName:"java"})<-[:HAS_TAG]-()-[:HAS_ANSWER]->(a:Answers) 
+WITH c,a,count(*) as freq
+Order BY  freq desc limit 10
+MATCH (a)<-[:HAS_ANSWER]->(q:Questions)-[:HAS_TAG]->(other:Tags)
+WITH a,other,count(*) AS freq2 
+ORDER BY freq2 DESC
+RETURN a.answerUserId, collect(other.Tag)[1..5] as list
+
+===================================================================================
+5. People Who Posted the Most Questions about javascript
+
+
+MATCH (t:Tags {tagName:'javascript'})<-[:HAS_TAG]-(q:Questions)
+RETURN q.qUserId, count(*) as count
+ORDER BY count DESC;
+
+================================================================================
+Mongo Queries
+==================================================================================
+Database Load Operations
+==================================================================================
+Aggregation to combine QA and Answer 
+
+
+db.QA.aggregate([
+    
+	  {"$limit":2},
+      {$lookup:
+        {
+          from: "Tags",
+          localField: "Id",
+          foreignField: "Id",
+          as: "tags"
+        }}
+   
+]).pretty();
+
+=====================================================================================
+Use cases
+=====================================================================================
+1. Top 5 tags of all time
+
+db.QATags.aggregate([
+    {
+        $unwind: "$tags"
+    },
+    {
+	   $group:
+	   {
+	      _id:"$tags.Tag",
+		  total:{ $sum:1 }
+	   }
+	   
+	},
+	{
+	   $sort: {total: -1}
+	},
+	{
+	 "$limit": 5
+	}
+])
+
+=====================================================================================================
+2) The Top Answerers for the javascript Tag
+
+db.QATags.aggregate([
+
+    {
+        $unwind: "$ans"
+    },
+	{
+	  "$match": {"tags.Tag":"javascript" }
+	},
+	{
+	   $group:
+	   {
+	      _id:"$ans.OwnerUserId",
+		  total:{ $sum:1 }
+	   }
+	   
+	},
+	{
+	   $sort: {total: -1}
+	},
+    {
+	 "$limit": 10
+	}
+  
+])
+=======================================================================================
+3. All Answers to each Java Questions According to Question Score
+
+db.QATags.aggregate([
+
+    {
+        $unwind: "$ans"
+    },
+	{
+	  "$match": {"tags.Tag":"java" }
+	},
+	{
+	   $group:
+	   {
+	      _id:"$ans.questionID",
+		  total:{ $sum:1 }
+	   }
+	   
+	},
+	
+    {
+	 "$limit": 10
+	}
+  
+])
+
+===================================================================================
+4. People Who Posted the Most Questions about javascript
+
+db.QATags.aggregate([
+
+    {
+        $unwind: "$ans"
+    },
+	{
+	  "$match": {"tags.Tag":"javascript" }
+	},
+	{
+	   $group:
+	   {
+	      _id:"$ans.questionID",
+		  total:{ $sum:1 }
+	   }
+	   
+	},
+	{
+	   $sort: {total: -1}
+	},
+    {
+	 "$limit": 10
+	}
+  
+])
+
+
+
+
+
+
+ 
+
